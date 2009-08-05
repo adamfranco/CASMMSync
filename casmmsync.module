@@ -24,6 +24,10 @@ function casmmsync_user($op, &$edit, &$user) {
 function casmmsync_cron() {
   $synced = 0;
 
+  if ((int)ini_get('max_execution_time') < (int)variable_get('cassmmsync_maxexectime', 300)) {
+    ini_set('max_execution_time', (int)variable_get('cassmmsync_maxexectime', 300));
+  }
+
   $params = array(
     'ADMIN_ACCESS' => variable_get('cassmmsync_adminkey', ''),
     'action'       => 'get_all_users',

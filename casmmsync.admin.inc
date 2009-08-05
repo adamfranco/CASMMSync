@@ -60,12 +60,27 @@ function casmmsync_admin_settings() {
     '#description' => 'The secret key for accessing the directory service without proxy authentication.',
   );
 
-  $form['server']['casmmsync_show_debug'] = array(
+  // Cron
+  $form['cron'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Cron settings'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+
+  $form['cron']['casmmsync_show_debug'] = array(
     '#type' => 'checkbox',
     '#title' => t('Show Debug'),
-    '#size' => 30,
     '#default_value' => variable_get('casmmsync_show_debug', FALSE),
     '#description' => 'Show debugging info when running cron.',
+  );
+
+  $form['cron']['cassmmsync_maxexectime'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Max Excecution Time'),
+    '#size' => 10,
+    '#default_value' => variable_get('cassmmsync_maxexectime', 300),
+    '#description' => 'An override for the PHP max_execution_time setting to allow the sync to complete.',
   );
 
   return system_settings_form($form);
