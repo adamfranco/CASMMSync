@@ -43,9 +43,6 @@ function casmmsync_cron() {
 
   $doc = new DOMDocument;
 
-  $tmpErrorReporting = error_reporting();
-  error_reporting(E_ALL);
-
   while (true) {
 	if(!$doc->load($base.'?'.http_build_query($params, null, '&')))
 	  break;
@@ -78,7 +75,6 @@ function casmmsync_cron() {
     if ($doc->documentElement->getAttribute('morePagesAvailable') != 'true')
 	break;
 
-//     break; // Just first page (debug)
 	$params['page']++;
   }
 
