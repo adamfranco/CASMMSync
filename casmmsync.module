@@ -17,3 +17,50 @@ require_once 'casmmsync.admin.inc';
 function casmmsync_user($op, &$edit, &$user) {
 
 }
+
+/**
+ * Implementation of hook_cron().
+ */
+function casmmsync_cron() {
+  $added = 0;
+  $synced = 0;
+
+  $params = array(
+    'ADMIN_ACCESS' => variable_get('cassmmsync_adminkey', ''),
+    'action'       => 'get_all_users',
+    'page'         => 0,
+  );
+  $base = variable_get('cassmmsync_path', '');
+
+  // Debugging status output
+  if (variable_get('casmmsync_show_debug', FALSE)) {
+    print "\n<h2>Syncronizing Users</h2>\n";
+  }
+
+  $doc = new DOMDocument;
+  while (true) {
+	if(!$doc->load($base.'?'.http_build_query($params, null, '&')))
+	  break;
+
+
+	// For testing, lets cut off short
+	if ($params['page'] > 200)
+		break;
+
+	// Debugging status output
+	if (variable_get('casmmsync_show_debug', FALSE)) {
+      if ($params['page'] && $params['page'] % 100 == 0)
+        print "\n<br/>";
+      print '.';
+      ob_end_flush();
+      flush();
+    }
+
+    if ($doc->documentElement->getAttribute('morePagesAvailable') != 'true')
+	break;
+
+	$params['page']++;
+  }
+
+  watchdog('cron', 'CAS-MM Sync completed. @synced users synced. @added users added.', array('@added' => $added, '@synced' => $synced));
+}

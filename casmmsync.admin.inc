@@ -60,6 +60,14 @@ function casmmsync_admin_settings() {
     '#description' => 'The secret key for accessing the directory service without proxy authentication.',
   );
 
+  $form['server']['casmmsync_show_debug'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Show Debug'),
+    '#size' => 30,
+    '#default_value' => variable_get('casmmsync_show_debug', FALSE),
+    '#description' => 'Show debugging info when running cron.',
+  );
+
   // Attribute Mapping
   $form['attributes'] = array(
     '#type' => 'fieldset',
