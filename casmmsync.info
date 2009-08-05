@@ -1,0 +1,7 @@
+; $Id $
+name = CAS-MM Sync
+description = Synchronizes users and groups from a CASDirectory into Monster Menus so they can be assigned permissions prior to logging in to Drupal.
+core = 6.x
+dependencies[] = monster_menus
+dependencies[] = cas
+package = Middlebury

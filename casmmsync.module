@@ -1,0 +1,19 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Synchronizes users and groups from a CASDirectory into Monster Menus.
+ *
+ * Synchronizes users and groups from a CASDirectory into Monster Menus so they
+ * can be assigned permissions prior to logging in to Drupal.
+ */
+
+require_once 'casmmsync.admin.inc';
+
+/**
+ * Implementation of hook_user()
+ */
+function casmmsync_user($op, &$edit, &$user) {
+
+}
