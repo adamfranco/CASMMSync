@@ -22,13 +22,13 @@ function casmmsync_user($op, &$edit, &$user) {
  * Implementation of hook_cron().
  */
 function casmmsync_cron() {
-  $added = 0;
   $synced = 0;
 
   $params = array(
     'ADMIN_ACCESS' => variable_get('cassmmsync_adminkey', ''),
     'action'       => 'get_all_users',
     'page'         => 0,
+    'include_membership' => 'true',
   );
   $base = variable_get('cassmmsync_path', '');
 
@@ -38,14 +38,29 @@ function casmmsync_cron() {
   }
 
   $doc = new DOMDocument;
+
+  $tmpErrorReporting = error_reporting();
+  error_reporting(E_ALL);
+
   while (true) {
 	if(!$doc->load($base.'?'.http_build_query($params, null, '&')))
 	  break;
 
+    $xpath = new DOMXPath($doc);
+    $xpath->registerNamespace('cas', 'http://www.yale.edu/tp/cas');
 
-	// For testing, lets cut off short
-	if ($params['page'] > 200)
-		break;
+	// Sync each user
+	foreach ($xpath->query('/cas:results/cas:entry') as $userElement) {
+	  // Fetch properties from the XML
+	  $webId = $xpath->query('./cas:user', $userElement)->item(0)->nodeValue;
+
+	  $attributes = _casmmsync_get_attributes($xpath, $userElement);
+
+	  $synced++;
+
+	  _casmmsync_sync_user($webId, $attributes);
+	}
+
 
 	// Debugging status output
 	if (variable_get('casmmsync_show_debug', FALSE)) {
@@ -59,8 +74,218 @@ function casmmsync_cron() {
     if ($doc->documentElement->getAttribute('morePagesAvailable') != 'true')
 	break;
 
+//     break; // Just first page (debug)
 	$params['page']++;
   }
 
-  watchdog('cron', 'CAS-MM Sync completed. @synced users synced. @added users added.', array('@added' => $added, '@synced' => $synced));
+  error_reporting($tmpErrorReporting);
+
+  watchdog('cron', 'CAS-MM Sync completed. @synced users synced.', array('@synced' => $synced));
+}
+
+/**
+ * Syncronize or create a user.
+ * This function is based on the implementation of cas_login_check() and makes use
+ * of functions in the cas_module in order to allow the settings of that module to
+ * consistantly define user attributes.
+ *
+ * @param $webId
+ *    The user's identifier from the CAS Directory
+ * @param $attributes
+ *    An array of attributes in the same format as returned by phpCAS
+ */
+function _casmmsync_sync_user($webId, $attributes) {
+  // Initializatio from cas_login_check()
+  $cas_user_register = variable_get('cas_user_register', 1);
+  $cas_authmap       = variable_get('cas_authmap', 0);
+
+  $all_roles         = user_roles();
+  $cas_roles         = array();
+  foreach ($all_roles as $key => $value) {
+    if (array_key_exists($key, variable_get('cas_auto_assigned_role', array(DRUPAL_AUTHENTICATED_RID)))) {
+      $cas_roles[$key] = $key;
+    }
+  }
+
+  $cas_attributes      = (int)variable_get('cas_attributes', 0);
+  $cas_attributes_uid  = (string)variable_get('cas_attributes_uid', '');
+  $cas_attributes_name = (string)variable_get('cas_attributes_name', '');
+  $cas_attributes_mail = (string)variable_get('cas_attributes_mail', '');
+
+  $cas_attributes = count($attributes);
+  $cas_name = $webId;
+
+  // Implementation beginning at line 173 of cas.module
+
+  if ($cas_attributes && $cas_attributes_uid) {
+    $cas_name = cas_attributes_concat($cas_attributes_uid, $attributes);
+  }
+
+  $cas_uid = "name";
+  if ($cas_attributes && $cas_attributes_uid) {
+    if ($cas_authmap) {
+      $cas_uid = "init";
+    }
+    else {
+      $cas_uid = "uid";
+    }
+  }
+
+  /*
+   * Invoke hook_auth_transform($op, &$username)
+   *
+   * Allow other modules to change the login name
+   * eg. if phpCAS::getUser() returns a string like it:johndoe:10.10.1.2:200805064255
+   * eg. if your cas users in Drupal need to be johndoe@cas
+   *
+   * Note: this transformation needs to happen before we check for blocked users.
+   */
+  cas_invoke_auth_transform($cas_name);
+
+  /*
+   * Invoke hook_auth_filter($op, &$username)
+   *
+   * Allow other modules to filter out some cas logins
+   * eg. if you want to use cas authentication but only allow SOME people in
+   * eg. if you want to filter out people without LDAP home directories
+   */
+  if (($allow = cas_invoke_auth_filter($cas_name)) === FALSE) {
+    drupal_set_message("The user account $cas_name is not available on this site.", "error");
+    return;
+  }
+
+  // blocked user check
+  if (user_is_blocked($cas_name)) {
+    // blocked in user administration
+    drupal_set_message("The username $cas_name has been blocked.", "error");
+    return;
+  }
+  else if (drupal_is_denied('user', $cas_name)) {
+    // denied by access controls
+    drupal_set_message("The name $cas_name is a reserved username.", "error");
+    return;
+  }
+
+  // try to log into Drupal
+  if ($cas_authmap) {
+    // users are coming from Drupal; no need to use the external_load and the authmap
+    $user = user_load(array($cas_uid => $cas_name));
+  }
+  else {
+    // users are external; use authmap table for associating external users
+    $user = user_external_load($cas_name);
+    if (!$user->uid && variable_get('cas_hijack_user', 0)) {
+      $user = user_load(array($cas_uid => $cas_name));
+      if ($user->uid) user_set_authmaps($user, array('authname_cas' => $cas_name));
+    }
+  }
+
+  // If we don't have a user register them.
+  if (!$user->uid) {
+    if ($cas_user_register == 1) {
+      $user_default = array(
+        "name" => $cas_name,
+        "pass" => user_password(),
+        "init" => db_escape_string($cas_name),
+        "status" => 1,
+        "roles" => $cas_roles,
+      );
+      if (!$cas_authmap) $user_default['authname_cas'] = $cas_name;
+      if ($cas_domain) $user_default['mail'] = $cas_name .'@'. $cas_domain;
+
+      if ($cas_attributes) {
+        if ($cas_attributes_name) {
+          $user_default['name'] = cas_attributes_concat($cas_attributes_name, $attributes);
+        }
+        if ($cas_attributes_mail) {
+          $user_default['mail'] = cas_attributes_concat($cas_attributes_mail, $attributes);
+        }
+      }
+//
+//       // Become user 1 to be able to save profile information
+//       session_save_session(FALSE);
+//       $admin = array('uid' => 1);
+//       $user = user_load($admin);
+
+      // now save the user
+      $user = user_save("", $user_default);
+      watchdog("user", 'new user: %n (CAS)', array('%n' => $user->name), WATCHDOG_NOTICE, l(t("edit user"), "admin/user/edit/$user->uid"));
+    }
+  }
+  // If we do have a user, updated their properties from the attributes if needed
+  else {
+    $user_default = array(
+      "name" => $cas_name,
+      "init" => db_escape_string($cas_name),
+    );
+    if (!$cas_authmap) $user_default['authname_cas'] = $cas_name;
+    if ($cas_domain) $user_default['mail'] = $cas_name .'@'. $cas_domain;
+
+    if ($cas_attributes) {
+      if ($cas_attributes_name) {
+        $user_default['name'] = cas_attributes_concat($cas_attributes_name, $attributes);
+      }
+      if ($cas_attributes_mail) {
+        $user_default['mail'] = cas_attributes_concat($cas_attributes_mail, $attributes);
+      }
+    }
+
+    $changed = FALSE;
+    foreach ($user_default as $key => $val) {
+      if ($val != $user->$key) {
+        $user->$key = $val;
+        $changed = TRUE;
+      }
+    }
+    if ($changed) {
+      $user = user_save($user, $user_default);
+    }
+  }
+
+  // final check to make sure we have a good user
+  if ($user->uid && $user->uid > 0) {
+
+    // update the roles and reset the password
+    $roles = $user->roles;
+    foreach ($cas_roles as $role) {
+      $roles[$role] = $role;
+    }
+    $user_up = array(
+      "pass" => user_password(),
+      "roles" => $roles,
+    );
+    $user = user_save($user, $user_up);
+  }
+}
+
+/**
+ * Helper method for accessing attribute values.
+ *
+ * @param $xpath
+ *    The DOMXPath object to query
+ * @param $userElement
+ *    The DOMElement to use as a reference, must contain cas:attribute elements.
+ * @return
+ *    An array of attributes
+ */
+function _casmmsync_get_attributes($xpath, $userElement) {
+$attributes = array();
+foreach ($xpath->query('./cas:attribute', $userElement) as $elem) {
+  $name = $elem->getAttribute('name');
+  $value = $elem->getAttribute('value');
+
+  // If multiple attributes exist, add as an array value
+  if (isset($attributes[$name])) {
+    // Initialize the array with the existing value
+    if (!is_array($attributes[$name])) {
+      $existingValue = $attributes[$name];
+      $attributes[$name] = array($existingValue);
+    }
+
+    $attributes[$name][] = $value;
+  } else {
+    $attributes[$name] = $value;
+  }
+}
+return $attributes;
 }
