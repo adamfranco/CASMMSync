@@ -39,6 +39,8 @@ function casmmsync_cron() {
   // Debugging status output
   if (variable_get('casmmsync_show_debug', FALSE)) {
     print "\n<h2>Syncronizing Users</h2>\n";
+    ob_end_flush();
+    flush();
   }
 
   $doc = new DOMDocument;
