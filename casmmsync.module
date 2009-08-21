@@ -23,6 +23,7 @@ function casmmsync_user($op, &$edit, &$user) {
  */
 function casmmsync_cron() {
   $synced = 0;
+  $failed = 0;
 
   if ((int)ini_get('max_execution_time') < (int)variable_get('cassmmsync_maxexectime', 300)) {
     ini_set('max_execution_time', (int)variable_get('cassmmsync_maxexectime', 300));
@@ -59,9 +60,11 @@ function casmmsync_cron() {
 
 	  $attributes = _casmmsync_get_attributes($xpath, $userElement);
 
-	  $synced++;
-
-	  _casmmsync_sync_user($webId, $attributes);
+	  if (_casmmsync_sync_user($webId, $attributes)) {
+	    $synced++;
+	  } else {
+	    $failed++;
+	  }
 	}
 
 
@@ -82,7 +85,7 @@ function casmmsync_cron() {
 
   error_reporting($tmpErrorReporting);
 
-  watchdog('cron', 'CAS-MM Sync completed. @synced users synced.', array('@synced' => $synced));
+  watchdog('cron', 'CAS-MM Sync completed. @synced users synced. @failed users skipped.', array('@synced' => $synced, '@failed' => $failed));
 }
 
 /**
@@ -95,6 +98,7 @@ function casmmsync_cron() {
  *    The user's identifier from the CAS Directory
  * @param $attributes
  *    An array of attributes in the same format as returned by phpCAS
+ * @return boolean TRUE on success, FALSE on failure.
  */
 function _casmmsync_sync_user($webId, $attributes) {
   // Initializatio from cas_login_check()
@@ -153,19 +157,19 @@ function _casmmsync_sync_user($webId, $attributes) {
    */
   if (($allow = cas_invoke_auth_filter($cas_name)) === FALSE) {
     drupal_set_message("The user account $cas_name is not available on this site.", "error");
-    return;
+    return FALSE;
   }
 
   // blocked user check
   if (user_is_blocked($cas_name)) {
     // blocked in user administration
     drupal_set_message("The username $cas_name has been blocked.", "error");
-    return;
+    return FALSE;
   }
   else if (drupal_is_denied('user', $cas_name)) {
     // denied by access controls
     drupal_set_message("The name $cas_name is a reserved username.", "error");
-    return;
+    return FALSE;
   }
 
   // try to log into Drupal
@@ -203,6 +207,11 @@ function _casmmsync_sync_user($webId, $attributes) {
           $user_default['mail'] = cas_attributes_concat($cas_attributes_mail, $attributes);
         }
       }
+
+      // Ignore users that do not have a name as these will collide in the user table anyway.
+      if (!strlen(trim($user_default['name']))) {
+        return FALSE;
+      }
 //
 //       // Become user 1 to be able to save profile information
 //       session_save_session(FALSE);
@@ -232,6 +241,11 @@ function _casmmsync_sync_user($webId, $attributes) {
       }
     }
 
+    // Ignore users that do not have a name as these will collide in the user table anyway.
+    if (!strlen(trim($user_default['name']))) {
+      return FALSE;
+    }
+
     $changed = FALSE;
     foreach ($user_default as $key => $val) {
       if ($val != $user->$key) {
@@ -258,6 +272,8 @@ function _casmmsync_sync_user($webId, $attributes) {
     );
     $user = user_save($user, $user_up);
   }
+
+  return TRUE;
 }
 
 /**
