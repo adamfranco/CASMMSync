@@ -22,12 +22,20 @@ function casmmsync_user($op, &$edit, &$user) {
  * Implementation of hook_cron().
  */
 function casmmsync_cron() {
-  $synced = 0;
-  $failed = 0;
 
   if ((int)ini_get('max_execution_time') < (int)variable_get('cassmmsync_maxexectime', 300)) {
     ini_set('max_execution_time', (int)variable_get('cassmmsync_maxexectime', 300));
   }
+  
+  _casmmsync_sync_users();
+}
+
+/**
+ * Synchronize all user records.
+ */
+function _casmmsync_sync_users() {
+  $synced = 0;
+  $failed = 0;
 
   $params = array(
     'ADMIN_ACCESS' => variable_get('cassmmsync_adminkey', ''),
@@ -82,10 +90,8 @@ function casmmsync_cron() {
 
 	$params['page']++;
   }
-
-  error_reporting($tmpErrorReporting);
-
-  watchdog('cron', 'CAS-MM Sync completed. @synced users synced. @failed users skipped.', array('@synced' => $synced, '@failed' => $failed));
+  
+  watchdog('cron', 'CAS-MM User-Sync completed. @synced users synced. @failed users skipped.', array('@synced' => $synced, '@failed' => $failed));
 }
 
 /**
