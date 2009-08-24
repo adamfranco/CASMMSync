@@ -293,23 +293,25 @@ function _casmmsync_sync_user($webId, $attributes) {
  *    An array of attributes
  */
 function _casmmsync_get_attributes($xpath, $userElement) {
-$attributes = array();
-foreach ($xpath->query('./cas:attribute', $userElement) as $elem) {
-  $name = $elem->getAttribute('name');
-  $value = $elem->getAttribute('value');
+  $attributes = array();
+  foreach ($xpath->query('./cas:attribute', $userElement) as $elem) {
+    $name = $elem->getAttribute('name');
+    $value = $elem->getAttribute('value');
 
-  // If multiple attributes exist, add as an array value
-  if (isset($attributes[$name])) {
-    // Initialize the array with the existing value
-    if (!is_array($attributes[$name])) {
-      $existingValue = $attributes[$name];
-      $attributes[$name] = array($existingValue);
+    // If multiple attributes exist, add as an array value
+    if (isset($attributes[$name])) {
+      // Initialize the array with the existing value
+      if (!is_array($attributes[$name])) {
+        $existingValue = $attributes[$name];
+        $attributes[$name] = array($existingValue);
+      }
+
+      $attributes[$name][] = $value;
+    } else {
+      $attributes[$name] = $value;
     }
-
-    $attributes[$name][] = $value;
-  } else {
-    $attributes[$name] = $value;
   }
+  return $attributes;
 }
-return $attributes;
-}
+
+
