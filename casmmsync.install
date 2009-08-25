@@ -1,0 +1,60 @@
+<?php
+// $Id$
+
+/**
+ * Implementation of hook_install().
+ */
+function casmmsync_install() {
+   drupal_install_schema('casmmsync');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function casmmsync_uninstall() {
+   drupal_uninstall_schema('casmmsync');
+}
+
+/**
+ * Implementation of hook_enable().
+ */
+function casmmsync_enable() {
+  if (!db_table_exists('casmmsync_group_map')) {
+    drupal_install_schema('casmmsync');
+  }
+}
+
+/**
+ * Implementation of hook_schema().
+ */
+function casmmsync_schema() {
+  $schema['casmmsync_group_map'] = array(
+    'description' => 'Mapping between CAS group ids and MM TIDs.',
+    'fields' => array(
+      'group_id' => array(
+        'description' => 'The group id from CAS.',
+        'type' => 'varchar',
+        'length' => 200,
+        'not null' => TRUE,
+      ),
+      'mmtid' => array(
+        'description' => 'The MM TID that maps to this group.',
+        'type' => 'int',
+        'length' => 10,
+        'not null' => TRUE,
+      ),
+      'sync_keep' => array(
+        'description' => 'The MM TID that maps to this group.',
+        'type' => 'int',
+        'length' => 1,
+        'not null' => TRUE,
+        'default' => 1,
+      ),
+    ),
+    'primary key' => array('group_id'),
+    'unique keys' => array('mmtid_unique' => array('mmtid')),
+    'indexes' => array('mmtid' => array('mmtid')),
+  );
+  
+  return $schema;
+}

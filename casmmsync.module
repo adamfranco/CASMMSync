@@ -27,15 +27,19 @@ function casmmsync_cron() {
     ini_set('max_execution_time', (int)variable_get('cassmmsync_maxexectime', 300));
   }
   
-  _casmmsync_sync_users();
+  $groups = _casmmsync_sync_users();
+  _casmmsync_sync_groups($groups);
 }
 
 /**
  * Synchronize all user records.
+ *
+ * return array An array of groups in which the members were found
  */
 function _casmmsync_sync_users() {
   $synced = 0;
   $failed = 0;
+  $groups = array();
 
   $params = array(
     'ADMIN_ACCESS' => variable_get('cassmmsync_adminkey', ''),
@@ -55,29 +59,40 @@ function _casmmsync_sync_users() {
   $doc = new DOMDocument;
 
   while (true) {
-	if(!$doc->load($base.'?'.http_build_query($params, null, '&')))
-	  break;
+//   while ($synced < 1000) {
+    if(!$doc->load($base.'?'.http_build_query($params, null, '&')))
+      break;
 
     $xpath = new DOMXPath($doc);
     $xpath->registerNamespace('cas', 'http://www.yale.edu/tp/cas');
 
-	// Sync each user
-	foreach ($xpath->query('/cas:results/cas:entry') as $userElement) {
-	  // Fetch properties from the XML
-	  $webId = $xpath->query('./cas:user', $userElement)->item(0)->nodeValue;
+    // Sync each user
+    foreach ($xpath->query('/cas:results/cas:entry') as $userElement) {
+      // Fetch properties from the XML
+      $webId = $xpath->query('./cas:user', $userElement)->item(0)->nodeValue;
 
-	  $attributes = _casmmsync_get_attributes($xpath, $userElement);
+      $attributes = _casmmsync_get_attributes($xpath, $userElement);
+      
+      $uid = _casmmsync_sync_user($webId, $attributes);
+      if ($uid !== FALSE) {
+        $synced++;
+        
+        // Add our groups to the sync list
+        if (isset($attributes['MemberOf']) && is_array($attributes['MemberOf'])) {
+          foreach ($attributes['MemberOf'] as $groupId) {
+            if (!isset($groups[$groupId]))
+              $groups[$groupId] = array();
+            $groups[$groupId][] = $uid;
+          }
+        }
+      } else {
+        $failed++;
+      }
+    }
 
-	  if (_casmmsync_sync_user($webId, $attributes)) {
-	    $synced++;
-	  } else {
-	    $failed++;
-	  }
-	}
 
-
-	// Debugging status output
-	if (variable_get('casmmsync_show_debug', FALSE)) {
+    // Debugging status output
+    if (variable_get('casmmsync_show_debug', FALSE)) {
       if ($params['page'] && $params['page'] % 100 == 0)
         print "\n<br/>";
       print '.';
@@ -86,12 +101,21 @@ function _casmmsync_sync_users() {
     }
 
     if ($doc->documentElement->getAttribute('morePagesAvailable') != 'true')
-	break;
+    break;
 
-	$params['page']++;
+    $params['page']++;
+  }
+  
+  // Debugging status output
+  if (variable_get('casmmsync_show_debug', FALSE)) {
+    print "\n<h3>User Synchronization Complete</h3>\n";
+    ob_end_flush();
+    flush();
   }
   
   watchdog('cron', 'CAS-MM User-Sync completed. @synced users synced. @failed users skipped.', array('@synced' => $synced, '@failed' => $failed));
+  
+  return $groups;
 }
 
 /**
@@ -104,7 +128,7 @@ function _casmmsync_sync_users() {
  *    The user's identifier from the CAS Directory
  * @param $attributes
  *    An array of attributes in the same format as returned by phpCAS
- * @return boolean TRUE on success, FALSE on failure.
+ * @return int User id on success, FALSE on failure.
  */
 function _casmmsync_sync_user($webId, $attributes) {
   // Initializatio from cas_login_check()
@@ -279,7 +303,7 @@ function _casmmsync_sync_user($webId, $attributes) {
     $user = user_save($user, $user_up);
   }
 
-  return TRUE;
+  return $user->uid;
 }
 
 /**
@@ -314,4 +338,134 @@ function _casmmsync_get_attributes($xpath, $userElement) {
   return $attributes;
 }
 
+/**
+ * Syncronize groups from a list of groups
+ *
+ * @param array $groups Keys are group-ids, values are an array of members.
+ * @return void
+ */
+function _casmmsync_sync_groups($groups) {
+  // Debugging status output
+  if (variable_get('casmmsync_show_debug', FALSE)) {
+    print "\n<h2>Syncronizing Groups</h2>\n";
+    ob_end_flush();
+    flush();
+  }
+  
+  // Clear the sync status of all groups. We will mark keepers in the sync process
+  // and later delete any not still in the AD.
+  db_query('UPDATE {casmmsync_group_map} SET sync_keep = 0');
+  
+  $synced = 0;
+  $idsFound = array();
+  foreach ($groups as $groupId => $members) {
+    $groupPath = _casmmsync_get_group_path($groupId);
+//     var_dump($groupPath);
 
+    $groupTId = mm_content_create_path($groupPath, '_casmmsync_create_group_path_element');
+    
+//     var_dump($groupTId);
+//     return false; // debugging exit.
+    
+    _casmmsync_record_mapping($groupId, $groupTId);
+//     _casmmsync_sync_group_members($groupTId, $members);
+    
+    // Debugging status output
+    if (variable_get('casmmsync_show_debug', FALSE) &&  $synced && $synced % 10 == 0) {
+      if ($synced && $synced % 1000 == 0)
+        print "\n<br/>";
+      print '.';
+      ob_end_flush();
+      flush();
+    }
+    
+    $synced++;
+  }
+  
+  // _casmmsync_clear_old_groups();
+  
+  // Debugging status output
+  if (variable_get('casmmsync_show_debug', FALSE)) {
+    print "\n<h3>Group Synchronization Complete</h3>\n";
+    ob_end_flush();
+    flush();
+  }
+}
+
+/**
+ * Record a mapping of the group id to the tid and mark the group as existing in
+ * the source data.
+ *
+ * @param string $groupId
+ * @param string $groupTId
+ * @return void
+ */
+function _casmmsync_record_mapping($groupId, $groupTId) {
+  db_query("UPDATE {casmmsync_group_map} SET sync_keep = 1 WHERE group_id = '%s'", $groupId);
+  if (!db_affected_rows()) {
+    db_query("INSERT INTO {casmmsync_group_map} (group_id, mmtid, sync_keep) VALUES ('%s', '%d', 1)", $groupId, $groupTId);
+  }
+}
+
+/**
+ * Callback function for mm_content_create_path(). This function will create a
+ * a new term (group level) for an element in the group path.
+ * 
+ * @param int $parentTId
+ * @param string $name
+ * @param string $alias
+ * @param ref array $additionalParams
+ * @return int
+ *   The term ID of the newly-created term.
+ */
+function _casmmsync_create_group_path_element($parentTId, $name, $alias, &$additionalParams) {
+  return mm_content_add_replace_cat(true, $parentTId, array(
+    'name'       => $name,
+    'alias'      => $alias,
+    'dflt_mode'  => 'r',
+  ));
+}
+
+/**
+ * Given a group AD DN, answer an array of path parts for the group
+ *
+ * @param string $groupId
+ * @return array
+ */
+function _casmmsync_get_group_path($groupId) {
+  // Reverse the DN and trim off the domain parts.
+  $path = ldap_explode_dn($groupId, 1);
+  unset($path['count']);
+  $path = array_slice(array_reverse($path), 2);
+  
+  // Make the DN parts the names (keys) and use an empty string for the alias (values).
+  $path = array_flip($path);
+  array_walk($path, '_casmmsync_array_empty_string');
+  
+  // Prepend the top-level group 
+  $path = array_merge(array('.Groups' => 'groups'), $path);
+  
+  return $path;
+}
+
+/**
+ * A helper function for returning an empty string for array_walk
+ *
+ * @param ref mixed $value
+ * @param mixed $key
+ * @return string An empty string.
+ */
+function _casmmsync_array_empty_string(&$value, $key) {
+  $value = '';
+}
+
+/**
+ * Answer the group name given an AD DN
+ *
+ * @param string $groupId
+ * @return string
+ */
+function _casmmsync_get_group_name($groupId) {
+  $parts = ldap_explode_dn($groupId, 1);
+  return $parts[0];
+}
