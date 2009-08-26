@@ -108,7 +108,7 @@ function _casmmsync_sync_users() {
   
   // Debugging status output
   if (variable_get('casmmsync_show_debug', FALSE)) {
-    print "\n<h3>User Synchronization Complete</h3>\n";
+    print "\n<h2>User Synchronization Complete</h2>\n";
     ob_end_flush();
     flush();
   }
@@ -382,11 +382,11 @@ function _casmmsync_sync_groups($groups) {
     $synced++;
   }
   
-  // _casmmsync_clear_old_groups();
+  _casmmsync_clear_old_groups();
   
   // Debugging status output
   if (variable_get('casmmsync_show_debug', FALSE)) {
-    print "\n<h3>Group Synchronization Complete</h3>\n";
+    print "\n<h2>Group Synchronization Complete</h2>\n";
     ob_end_flush();
     flush();
   }
@@ -397,14 +397,97 @@ function _casmmsync_sync_groups($groups) {
  * the source data.
  *
  * @param string $groupId
- * @param string $groupTId
+ * @param int $groupTId
  * @return void
  */
 function _casmmsync_record_mapping($groupId, $groupTId) {
-  db_query("UPDATE {casmmsync_group_map} SET sync_keep = 1 WHERE group_id = '%s'", $groupId);
+  db_query("UPDATE {casmmsync_group_map} SET sync_keep = 1 WHERE group_id='%s'", $groupId);
   if (!db_affected_rows()) {
     db_query("INSERT INTO {casmmsync_group_map} (group_id, mmtid, sync_keep) VALUES ('%s', '%d', 1)", $groupId, $groupTId);
   }
+}
+
+/**
+ * Clear out old groups that are no longer in the AD
+ *
+ * @return void
+ */
+function _casmmsync_clear_old_groups() {
+   // Debugging status output
+  if (variable_get('casmmsync_show_debug', FALSE)) {
+    print "\n<h3>Deleting missing groups</h3>\n";
+    ob_end_flush();
+    flush();
+  }
+  $deleted = 0;
+  
+  $results = db_query("SELECT group_id, mmtid FROM {casmmsync_group_map} WHERE sync_keep = 0");
+  while ($data = db_fetch_object($results)) {
+    _casmmsync_delete_group($data->group_id, $data->mmtid);
+    
+    // Debugging status output
+    if (variable_get('casmmsync_show_debug', FALSE) &&  $deleted && $deleted % 10 == 0) {
+      if ($deleted && $deleted % 1000 == 0)
+        print "\n<br/>";
+      print '.';
+      ob_end_flush();
+      flush();
+    }
+    $deleted++;
+  }
+  
+  if (variable_get('casmmsync_show_debug', FALSE)) {
+    print "\n<h3>Missing groups deleted</h3>\n";
+    ob_end_flush();
+    flush();
+  }
+}
+
+/**
+ * Delete a group.
+ *
+ * @param string $groupId
+ * @param int $groupTId
+ */
+function _casmmsync_delete_group($groupId, $groupTId) {
+  $parent = mm_content_tree_parent($groupTId);
+    
+  // Delete the group
+  mm_content_delete($groupTId);
+  
+  // Prune the group parents if empty
+  _casmmsync_prune_empty_group_containers($parent);
+  
+  // Remove the mapping.
+  db_query("DELETE FROM {casmmsync_group_map} WHERE group_id='%s'", $groupId);
+}
+
+/**
+ * Prune empty group containers
+ *
+ * @param int $containerId
+ */
+function _casmmsync_prune_empty_group_containers($containerId) {  
+  // Skip if we aren't given a parent Id.
+  if (!$containerId)
+    return;
+  
+  // Don't delete the root group container
+  if ($containerId == mm_content_groups_tid())
+    return;
+  
+  $tree = mm_content_get_tree($containerId);
+  
+  // Don't prune if not empty
+  if (is_array($tree) && count($tree) > 1)
+    return;
+  
+  // If empty delete and prune parent recursively
+  $parent = mm_content_tree_parent($containerId);
+  mm_content_delete($containerId);
+  
+  if ($parent != $containerId)
+    _casmmsync_prune_empty_group_containers($parent);
 }
 
 /**
