@@ -22,7 +22,10 @@ function casmmsync_user($op, &$edit, &$user) {
  * Implementation of hook_cron().
  */
 function casmmsync_cron() {
-
+  if (_casmmsync_int_from_bytestring(ini_get('memory_limit')) < _casmmsync_int_from_bytestring(variable_get('memory_limit', '300M'))) {
+    ini_set('memory_limit', variable_get('memory_limit', '300M'));
+  }
+  
   if ((int)ini_get('max_execution_time') < (int)variable_get('cassmmsync_maxexectime', 300)) {
     ini_set('max_execution_time', (int)variable_get('cassmmsync_maxexectime', 300));
   }
@@ -357,7 +360,6 @@ function _casmmsync_sync_groups($groups) {
   db_query('UPDATE {casmmsync_group_map} SET sync_keep = 0');
   
   $synced = 0;
-  $idsFound = array();
   foreach ($groups as $groupId => $members) {
     $groupPath = _casmmsync_get_group_path($groupId);
 //     var_dump($groupPath);
@@ -368,7 +370,12 @@ function _casmmsync_sync_groups($groups) {
 //     return false; // debugging exit.
     
     _casmmsync_record_mapping($groupId, $groupTId);
-//     _casmmsync_sync_group_members($groupTId, $members);
+    foreach ($members as $memberId) {
+      @db_query('INSERT INTO {mm_group} (gid, uid) VALUES(%d, %d)', $groupTId, $memberId);
+    }
+    
+    // Wipe out the member array to free memory.
+    $groups[$groupId] = null;
     
     // Debugging status output
     if (variable_get('casmmsync_show_debug', FALSE) &&  $synced && $synced % 10 == 0) {
@@ -551,4 +558,31 @@ function _casmmsync_array_empty_string(&$value, $key) {
 function _casmmsync_get_group_name($groupId) {
   $parts = ldap_explode_dn($groupId, 1);
   return $parts[0];
+}
+
+/**
+ * Convert a byte-ammount string into an integer.
+ * 
+ * @param string $byteString
+ * @return int
+ */
+function _casmmsync_int_from_bytestring($byteString) {
+  preg_match('/^\s*([0-9.]+)\s*([KMGTPE])B?\s*$/i', $byteString, $matches);
+  $num = (float)$matches[1];
+  switch (strtoupper($matches[2])) {
+    case 'E':
+      $num = $num * 1024;
+    case 'P':
+      $num = $num * 1024;
+    case 'T':
+      $num = $num * 1024;
+    case 'G':
+      $num = $num * 1024;
+    case 'M':
+      $num = $num * 1024;
+    case 'K':
+      $num = $num * 1024;
+  }
+  
+  return intval($num);
 }
