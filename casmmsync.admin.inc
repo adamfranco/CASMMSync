@@ -24,6 +24,11 @@ function casmmsync_menu() {
     'type' => MENU_NORMAL_ITEM,
   );
 
+  $items['casmmsync/update_group'] = array(
+    'page callback' => '_casmmsync_receive_group_update',
+    'access callback' => true,
+    'type' => MENU_CALLBACK,
+  );
 
   return $items;
 }
@@ -81,6 +86,30 @@ function casmmsync_admin_settings() {
     '#size' => 10,
     '#default_value' => variable_get('cassmmsync_maxexectime', 300),
     '#description' => 'An override for the PHP max_execution_time setting to allow the sync to complete.',
+  );
+
+  // Update Notification
+  $form['update_notify'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Update notification settings'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+
+  $form['update_notify']['cassmmsync_update_passkey'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Group update notification passkey'),
+    '#size' => 30,
+    '#default_value' => variable_get('cassmmsync_update_passkey', ''),
+    '#description' => t('Enter a passkey here to allow CAS-MM Sync to recieve ping-back updates when groups are changed. This passkey should be configured in ping-back requests in the group-management system. The group-management system should make GET requests to the URL, <br/> &nbsp; &nbsp; @url <br/>where XXXXX is the passkey above and YYYYY is the group id.', array(
+      '@url' => url('casmmsync/update_group', array(
+        'query' => array(
+          'passkey' => 'XXXXX',
+          'group_id' => 'YYYYY',
+        ),
+        'absolute' => true,
+      )))
+    ),
   );
 
   return system_settings_form($form);

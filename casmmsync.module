@@ -35,6 +35,88 @@ function casmmsync_cron() {
 }
 
 /**
+ * Receive a group update request and process it if authorized
+ */
+function _casmmsync_receive_group_update() {
+  if (!isset($_REQUEST['group_id']) || !strlen($_REQUEST['group_id'])) {
+    header('HTTP/1.1 400 Bad Request');
+    die('group_id missing.');
+  }
+  if (!isset($_REQUEST['passkey']) || !strlen($_REQUEST['passkey'])) {
+    header('HTTP/1.1 400 Bad Request');
+    die('passkey missing.');
+  }
+  if ($_REQUEST['passkey'] != variable_get('cassmmsync_update_passkey', '')) {
+    header('HTTP/1.1 403 Bad Request');
+    die('Invalid passkey.');
+  }
+  casmmsync_update_group($_REQUEST['group_id']);
+}
+
+/**
+ * Update a single group by id.
+ *
+ * @param string $groupDN
+ *    The DN of the group to update.
+ */
+function casmmsync_update_group($groupDN) {
+  $params = array(
+    'ADMIN_ACCESS' => variable_get('cassmmsync_adminkey', ''),
+    'action'       => 'get_group_members',
+    'id'         => $groupDN,
+  );
+  $base = variable_get('cassmmsync_path', '');
+  $doc = new DOMDocument;
+  $url = $base.'?'.http_build_query($params, null, '&');
+  if(!$doc->load($url)) {
+     watchdog('casmmsync', "Group updated failed for @groupDN. Couldn't load XML at @url", array('@groupDN' => $groupDN, '@url' => $url));
+     print t("Group updated failed for @groupDN. Couldn't load XML at <a href='!url'>@url</a>", array('@groupDN' => $groupDN, '@url' => $url, '!url' => $url));
+     return;
+  }
+  $xpath = new DOMXPath($doc);
+  $xpath->registerNamespace('cas', 'http://www.yale.edu/tp/cas');
+
+  $elements = $xpath->query('/cas:results/cas:entry/cas:user');
+  $newMembers = array();
+  foreach ($elements as $element) {
+    $newMembers[] = strval($element->nodeValue);
+  }
+
+  $groupPath = _casmmsync_get_group_path($groupDN);
+  $groupTId = mm_content_create_path($groupPath, '_casmmsync_create_group_path_element');
+
+  $existingMembers = array();
+  $result = db_query("SELECT {users}.uid, init FROM {mm_group} LEFT JOIN users ON {mm_group}.uid = {users}.uid WHERE gid='%d'", $groupTId);
+  while ($row = db_fetch_object($result)) {
+    if ($row->init)
+      $existingMembers[] = $row->init;
+  }
+
+  $removedMembers = array_diff($existingMembers, $newMembers);
+  $addedMembers = array_diff($newMembers, $existingMembers);
+
+  foreach ($addedMembers as $webId) {
+    $userElement = $xpath->query("//cas:entry[cas:user = '".$webId."']")->item(0);
+    $attributes = _casmmsync_get_attributes($xpath, $userElement);
+    $uid = _casmmsync_sync_user($webId, $attributes);
+    @db_query('INSERT INTO {mm_group} (gid, uid) VALUES(%d, %d)', $groupTId, $uid);
+  }
+
+  foreach ($removedMembers as $webId) {
+    db_query("DELETE FROM {mm_group} WHERE gid='%d' AND uid IN (SELECT uid FROM {users} WHERE init='%s')", $groupTId, $webId);
+  }
+
+  watchdog('casmmsync', "Group membership updated for @groupDN. @added members added, @removed members removed.", array('@groupDN' => $groupDN, '@added' => count($addedMembers), '@removed' => count($removedMembers)));
+
+  // Debugging status output
+  if (variable_get('casmmsync_show_debug', FALSE)) {
+    print t("Group membership updated for @groupDN. @added members added, @removed members removed.", array('@groupDN' => $groupDN, '@added' => count($addedMembers), '@removed' => count($removedMembers)));
+    ob_end_flush();
+    flush();
+  }
+}
+
+/**
  * Synchronize all user records.
  *
  * return array An array of groups in which the members were found
@@ -189,19 +271,19 @@ function _casmmsync_sync_user($webId, $attributes) {
    * eg. if you want to filter out people without LDAP home directories
    */
   if (($allow = cas_invoke_auth_filter($cas_name)) === FALSE) {
-    drupal_set_message("The user account $cas_name is not available on this site.", "error");
+    drupal_set_message("The user account '$cas_name' is not available on this site.", "error");
     return FALSE;
   }
 
   // blocked user check
   if (user_is_blocked($cas_name)) {
     // blocked in user administration
-    drupal_set_message("The username $cas_name has been blocked.", "error");
+    drupal_set_message("The username '$cas_name' has been blocked.", "error");
     return FALSE;
   }
   else if (drupal_is_denied('user', $cas_name)) {
     // denied by access controls
-    drupal_set_message("The name $cas_name is a reserved username.", "error");
+    drupal_set_message("The name '$cas_name' is a reserved username.", "error");
     return FALSE;
   }
 
