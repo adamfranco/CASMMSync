@@ -49,19 +49,19 @@ function casmmsync_admin_settings() {
     '#collapsed' => FALSE,
   );
 
-  $form['server']['cassmmsync_path'] = array(
+  $form['server']['casmmsync_path'] = array(
     '#type' => 'textfield',
     '#title' => t('CASDirectory URL'),
     '#size' => 30,
-    '#default_value' => variable_get('cassmmsync_path', ''),
+    '#default_value' => variable_get('casmmsync_path', ''),
     '#description' => 'The base URL of your CASDirectory web-service.',
   );
 
-  $form['server']['cassmmsync_adminkey'] = array(
+  $form['server']['casmmsync_adminkey'] = array(
     '#type' => 'textfield',
     '#title' => t('Admin Access Key'),
     '#size' => 30,
-    '#default_value' => variable_get('cassmmsync_adminkey', ''),
+    '#default_value' => variable_get('casmmsync_adminkey', ''),
     '#description' => 'The secret key for accessing the directory service without proxy authentication.',
   );
 
@@ -80,11 +80,11 @@ function casmmsync_admin_settings() {
     '#description' => 'Show debugging info when running cron.',
   );
 
-  $form['cron']['cassmmsync_maxexectime'] = array(
+  $form['cron']['casmmsync_maxexectime'] = array(
     '#type' => 'textfield',
     '#title' => t('Max Excecution Time'),
     '#size' => 10,
-    '#default_value' => variable_get('cassmmsync_maxexectime', 300),
+    '#default_value' => variable_get('casmmsync_maxexectime', 300),
     '#description' => 'An override for the PHP max_execution_time setting to allow the sync to complete.',
   );
 
@@ -96,11 +96,11 @@ function casmmsync_admin_settings() {
     '#collapsed' => FALSE,
   );
 
-  $form['update_notify']['cassmmsync_update_passkey'] = array(
+  $form['update_notify']['casmmsync_update_passkey'] = array(
     '#type' => 'textfield',
     '#title' => t('Group update notification passkey'),
     '#size' => 30,
-    '#default_value' => variable_get('cassmmsync_update_passkey', ''),
+    '#default_value' => variable_get('casmmsync_update_passkey', ''),
     '#description' => t('Enter a passkey here to allow CAS-MM Sync to recieve ping-back updates when groups are changed. This passkey should be configured in ping-back requests in the group-management system. The group-management system should make GET requests to the URL, <br/> &nbsp; &nbsp; @url <br/>where XXXXX is the passkey above and YYYYY is the group id.', array(
       '@url' => url('casmmsync/update_group', array(
         'query' => array(

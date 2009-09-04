@@ -58,3 +58,21 @@ function casmmsync_schema() {
   
   return $schema;
 }
+
+/**
+ * Update variables to their new names
+ */
+function casmmsync_update_6001() {
+  $vars = array(
+    'cassmmsync_path' => 'casmmsync_path',
+    'cassmmsync_adminkey' => 'casmmsync_adminkey',
+    'cassmmsync_maxexectime' => 'casmmsync_maxexectime',
+    'cassmmsync_update_passkey' => 'casmmsync_update_passkey',
+  );
+  foreach ($vars as $old => $new) {
+    if (!variable_get($new, false) && variable_get($old, false)) {
+      variable_set($new, variable_get($old, false));
+      variable_del($old);
+    }
+  }
+}

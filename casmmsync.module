@@ -26,8 +26,8 @@ function casmmsync_cron() {
     ini_set('memory_limit', variable_get('memory_limit', '300M'));
   }
   
-  if ((int)ini_get('max_execution_time') < (int)variable_get('cassmmsync_maxexectime', 300)) {
-    ini_set('max_execution_time', (int)variable_get('cassmmsync_maxexectime', 300));
+  if ((int)ini_get('max_execution_time') < (int)variable_get('casmmsync_maxexectime', 300)) {
+    ini_set('max_execution_time', (int)variable_get('casmmsync_maxexectime', 300));
   }
   
   $groups = _casmmsync_sync_users();
@@ -54,7 +54,7 @@ function _casmmsync_receive_group_update() {
     header('HTTP/1.1 400 Bad Request');
     die('passkey missing.');
   }
-  if ($_REQUEST['passkey'] != variable_get('cassmmsync_update_passkey', '')) {
+  if ($_REQUEST['passkey'] != variable_get('casmmsync_update_passkey', '')) {
     header('HTTP/1.1 403 Bad Request');
     die('Invalid passkey.');
   }
@@ -84,11 +84,11 @@ function _casmmsync_receive_group_update() {
  */
 function casmmsync_update_group($groupDN) {
   $params = array(
-    'ADMIN_ACCESS' => variable_get('cassmmsync_adminkey', ''),
+    'ADMIN_ACCESS' => variable_get('casmmsync_adminkey', ''),
     'action'       => 'get_group_members',
     'id'         => $groupDN,
   );
-  $base = variable_get('cassmmsync_path', '');
+  $base = variable_get('casmmsync_path', '');
   $doc = new DOMDocument;
   $url = $base.'?'.http_build_query($params, null, '&');
   if(!$doc->load($url)) {
@@ -156,12 +156,12 @@ function _casmmsync_sync_users() {
   $groups = array();
 
   $params = array(
-    'ADMIN_ACCESS' => variable_get('cassmmsync_adminkey', ''),
+    'ADMIN_ACCESS' => variable_get('casmmsync_adminkey', ''),
     'action'       => 'get_all_users',
     'page'         => 0,
     'include_membership' => 'true',
   );
-  $base = variable_get('cassmmsync_path', '');
+  $base = variable_get('casmmsync_path', '');
 
   // Debugging status output
   if (variable_get('casmmsync_show_debug', FALSE)) {
