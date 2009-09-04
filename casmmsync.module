@@ -234,7 +234,7 @@ function _casmmsync_sync_users() {
     flush();
   }
   
-  watchdog('cron', 'CAS-MM User-Sync completed. @synced users synced. @failed users skipped.', array('@synced' => $synced, '@failed' => $failed));
+  watchdog('casmmsync', 'CAS-MM User-Sync completed. @synced users synced. @failed users skipped.', array('@synced' => $synced, '@failed' => $failed));
   
   return $groups;
 }
@@ -371,7 +371,7 @@ function _casmmsync_sync_user($webId, $attributes) {
 
       // now save the user
       $user = user_save("", $user_default);
-      watchdog("user", 'new user: %n (CAS)', array('%n' => $user->name), WATCHDOG_NOTICE, l(t("edit user"), "admin/user/edit/$user->uid"));
+      watchdog("casmmsync", 'new user: %n (CAS)', array('%n' => $user->name), WATCHDOG_NOTICE, l(t("edit user"), "admin/user/edit/$user->uid"));
     }
   }
   // If we do have a user, updated their properties from the attributes if needed
