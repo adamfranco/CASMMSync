@@ -32,6 +32,14 @@ function casmmsync_cron() {
   
   $groups = _casmmsync_sync_users();
   _casmmsync_sync_groups($groups);
+
+  // Sync any additional groups that might have had updates while we were running
+  // the user sync.
+  $queue = array_unique(variable_get('casmmsync_group_update_queue', array()));
+  foreach ($queue as $groupDN) {
+    casmmsync_update_group($groupDN);
+  }
+  variable_set('casmmsync_group_update_queue', array());
 }
 
 /**
@@ -51,11 +59,21 @@ function _casmmsync_receive_group_update() {
     die('Invalid passkey.');
   }
 
-  // Act as the admin user to create or delete groups
-  global $user;
-  $user = user_load(1);
+  // If cron is currently running, add our group to a queue to be updated at the
+  // end of group sync or on the next cron run.
+  if (variable_get('cron_semaphore', false)) {
+    $queue = variable_get('casmmsync_group_update_queue', array());
+    $queue[] = $_REQUEST['group_id'];
+    variable_set('casmmsync_group_update_queue', $queue);
+    watchdog('casmmsync', "Cron running. Queued group for later sync: @groupDN.", array('@groupDN' => $_REQUEST['group_id']));
+    print t("Cron running. Queued group for later sync: @groupDN.", array('@groupDN' => $_REQUEST['group_id']));
+  } else {
+    // Act as the admin user to create or delete groups
+    global $user;
+    $user = user_load(1);
 
-  casmmsync_update_group($_REQUEST['group_id']);
+    casmmsync_update_group($_REQUEST['group_id']);
+  }
 }
 
 /**
