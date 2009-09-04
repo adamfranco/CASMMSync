@@ -491,13 +491,20 @@ function _casmmsync_sync_groups($groups) {
   $synced = 0;
   foreach ($groups as $groupId => $members) {
     $groupTId = casmmsync_get_or_create_group_by_dn($groupId);
+
+    // Add new members
     foreach ($members as $memberId) {
       @db_query('INSERT INTO {mm_group} (gid, uid) VALUES(%d, %d)', $groupTId, $memberId);
     }
-    
+
+    // Delete missing members
+    $args = array($groupTId);
+    $args = array_merge($args, $members);
+    db_query("DELETE FROM {mm_group} WHERE gid='%d' AND uid NOT IN (".db_placeholders($members, 'int').")", $args);
+
     // Wipe out the member array to free memory.
     $groups[$groupId] = null;
-    
+
     // Debugging status output
     if (variable_get('casmmsync_show_debug', FALSE) &&  $synced && $synced % 10 == 0) {
       if ($synced && $synced % 1000 == 0)
