@@ -88,6 +88,16 @@ function casmmsync_admin_settings() {
     '#description' => 'An override for the PHP max_execution_time setting to allow the sync to complete.',
   );
 
+  $form['cron']['casmmsync_always_sync_users'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Always sync users'),
+    '#default_value' => variable_get('casmmsync_always_sync_users', TRUE),
+    '#description' => t('If checked, users and groups will be synced on every cron run. <br/> If not checked, they will only be synced on cron runs that include <code>casmmsync_sync_users=true</code> in the request. This can be passed to cron web-requests as GET or POST variables such as in this example URL: <br/>&nbsp; &nbsp; <code>http://www.example.com/cron.php?casmmsync_sync_users=true</code> <br/><a href="!url">Run cron manually with user sync</a>. ', array(
+      '!url' => url('admin/reports/status/run-cron', array('query' => array('casmmsync_sync_users' => 'true'), 'absolute' => true,)),
+
+    )),
+  );
+
   // Update Notification
   $form['update_notify'] = array(
     '#type' => 'fieldset',
