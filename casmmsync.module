@@ -50,6 +50,11 @@ function _casmmsync_receive_group_update() {
     header('HTTP/1.1 403 Bad Request');
     die('Invalid passkey.');
   }
+
+  // Act as the admin user to create or delete groups
+  global $user;
+  $user = user_load(1);
+
   casmmsync_update_group($_REQUEST['group_id']);
 }
 
@@ -69,8 +74,15 @@ function casmmsync_update_group($groupDN) {
   $doc = new DOMDocument;
   $url = $base.'?'.http_build_query($params, null, '&');
   if(!$doc->load($url)) {
-     watchdog('casmmsync', "Group updated failed for @groupDN. Couldn't load XML at @url", array('@groupDN' => $groupDN, '@url' => $url));
-     print t("Group updated failed for @groupDN. Couldn't load XML at <a href='!url'>@url</a>", array('@groupDN' => $groupDN, '@url' => $url, '!url' => $url));
+     watchdog('casmmsync', "Group is gone: @groupDN. Couldn't load XML at @url", array('@groupDN' => $groupDN, '@url' => $url));
+     print t("Group is gone: @groupDN. Couldn't load XML at <a href='!url'>@url</a>", array('@groupDN' => $groupDN, '@url' => $url, '!url' => $url));
+
+     $results = db_query("SELECT group_id, mmtid FROM {casmmsync_group_map} WHERE group_id='%s'", $groupDN);
+     if ($data = db_fetch_object($results)) {
+	   _casmmsync_delete_group($data->group_id, $data->mmtid);
+	 } else {
+	   watchdog('casmmsync', "Couldn't delete group @groupDN. Couldn't find the mmtid.", array('@groupDN' => $groupDN));
+	 }
      return;
   }
   $xpath = new DOMXPath($doc);
@@ -82,8 +94,7 @@ function casmmsync_update_group($groupDN) {
     $newMembers[] = strval($element->nodeValue);
   }
 
-  $groupPath = _casmmsync_get_group_path($groupDN);
-  $groupTId = mm_content_create_path($groupPath, '_casmmsync_create_group_path_element');
+  $groupTId = casmmsync_get_or_create_group_by_dn($groupDN);
 
   $existingMembers = array();
   $result = db_query("SELECT {users}.uid, init FROM {mm_group} LEFT JOIN users ON {mm_group}.uid = {users}.uid WHERE gid='%d'", $groupTId);
@@ -424,6 +435,21 @@ function _casmmsync_get_attributes($xpath, $userElement) {
 }
 
 /**
+ * Get or create a group for a group DN
+ *
+ * @param string $groupId
+ *    The DN.
+ * @return int
+ *    The mmtid of the group
+ */
+function casmmsync_get_or_create_group_by_dn($groupId) {
+  $groupPath = _casmmsync_get_group_path($groupId);
+  $groupTId = mm_content_create_path($groupPath, '_casmmsync_create_group_path_element');
+  _casmmsync_record_mapping($groupId, $groupTId);
+  return $groupTId;
+}
+
+/**
  * Syncronize groups from a list of groups
  *
  * @param array $groups Keys are group-ids, values are an array of members.
@@ -443,15 +469,7 @@ function _casmmsync_sync_groups($groups) {
   
   $synced = 0;
   foreach ($groups as $groupId => $members) {
-    $groupPath = _casmmsync_get_group_path($groupId);
-//     var_dump($groupPath);
-
-    $groupTId = mm_content_create_path($groupPath, '_casmmsync_create_group_path_element');
-    
-//     var_dump($groupTId);
-//     return false; // debugging exit.
-    
-    _casmmsync_record_mapping($groupId, $groupTId);
+    $groupTId = casmmsync_get_or_create_group_by_dn($groupId);
     foreach ($members as $memberId) {
       @db_query('INSERT INTO {mm_group} (gid, uid) VALUES(%d, %d)', $groupTId, $memberId);
     }
@@ -542,13 +560,18 @@ function _casmmsync_delete_group($groupId, $groupTId) {
   $parent = mm_content_tree_parent($groupTId);
     
   // Delete the group
-  mm_content_delete($groupTId);
+  if ($error = mm_content_delete($groupTId, FALSE)) {
+    watchdog('casmmsync', "Error deleting group @mmtid: @error", array('@error' => $error, '@mmtid' => $groupTId));
+    return;
+  }
   
   // Prune the group parents if empty
   _casmmsync_prune_empty_group_containers($parent);
   
   // Remove the mapping.
   db_query("DELETE FROM {casmmsync_group_map} WHERE group_id='%s'", $groupId);
+
+  watchdog('casmmsync', "Deleted group with mmtid @mmtid and id @groupId .", array('@groupId' => $groupId, '@mmtid' => $groupTId));
 }
 
 /**
@@ -573,7 +596,7 @@ function _casmmsync_prune_empty_group_containers($containerId) {
   
   // If empty delete and prune parent recursively
   $parent = mm_content_tree_parent($containerId);
-  mm_content_delete($containerId);
+  mm_content_delete($containerId, FALSE);
   
   if ($parent != $containerId)
     _casmmsync_prune_empty_group_containers($parent);
