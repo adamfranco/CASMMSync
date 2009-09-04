@@ -104,10 +104,10 @@ function casmmsync_update_group($groupDN) {
 
      $results = db_query("SELECT group_id, mmtid FROM {casmmsync_group_map} WHERE group_id='%s'", $groupDN);
      if ($data = db_fetch_object($results)) {
-	   _casmmsync_delete_group($data->group_id, $data->mmtid);
-	 } else {
-	   watchdog('casmmsync', "Couldn't delete group @groupDN. Couldn't find the mmtid.", array('@groupDN' => $groupDN));
-	 }
+       _casmmsync_delete_group($data->group_id, $data->mmtid);
+     } else {
+       watchdog('casmmsync', "Couldn't delete group @groupDN. Couldn't find the mmtid.", array('@groupDN' => $groupDN));
+     }
      return;
   }
   $xpath = new DOMXPath($doc);
