@@ -29,6 +29,10 @@ function casmmsync_cron() {
   if ((int)ini_get('max_execution_time') < (int)variable_get('casmmsync_maxexectime', 300)) {
     ini_set('max_execution_time', (int)variable_get('casmmsync_maxexectime', 300));
   }
+  
+  // Act as the admin user to create or delete groups
+  global $user;
+  $user = user_load(1);
 
   // Skip syncing users if desired.
   if (variable_get('casmmsync_always_sync_users', TRUE) || (isset($_REQUEST['casmmsync_sync_users']) && strtolower($_REQUEST['casmmsync_sync_users']) == 'true')) {
