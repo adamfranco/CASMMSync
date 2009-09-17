@@ -76,3 +76,10 @@ function casmmsync_update_6001() {
     }
   }
 }
+
+/**
+ * Update groups to be usable as well as read-only
+ */
+function casmmsync_update_6002() {
+  $results = db_query("UPDATE {mm_tree} SET default_mode='ru' WHERE mmtid IN (SELECT mmtid FROM  {casmmsync_group_map})");
+}

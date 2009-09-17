@@ -523,6 +523,9 @@ function _casmmsync_sync_groups($groups) {
   
   _casmmsync_clear_old_groups();
   
+  // Set all of the synced groups to be selectable (while keeping their containers read-only).
+  db_query("UPDATE {mm_tree} SET default_mode='ru' WHERE mmtid IN (SELECT mmtid FROM  {casmmsync_group_map})");
+
   // Debugging status output
   if (variable_get('casmmsync_show_debug', FALSE)) {
     print "\n<h2>Group Synchronization Complete</h2>\n";
@@ -649,7 +652,7 @@ function _casmmsync_create_group_path_element($parentTId, $name, $alias, &$addit
   return mm_content_add_replace_cat(true, $parentTId, array(
     'name'       => $name,
     'alias'      => $alias,
-    'dflt_mode'  => 'r',
+    'dflt_mode'  => 'r',  // Set all to read-only for now. The groups will be updated to read/use later with the containers remaining read-only.
   ));
 }
 
